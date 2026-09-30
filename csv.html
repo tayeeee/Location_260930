@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV 지도 시각화 도구 (다중 파일 레이어 지원)</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Leaflet Map CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Leaflet Marker Cluster CSS & JS (CDNJS for higher reliability) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+    
+    <!-- PapaParse CSV Parser -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        html, body {
+            height: 100vh;
+            width: 100vw;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #f8fafc;
+            overflow: hidden;
+        }
+
+        .map-parent-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 0.75rem;
+            overflow: hidden;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            background-color: #e5e7eb;
+        }
+
+        /* Custom scrollbars */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Leaflet custom div icon resetting default white block */
+        .custom-marker-wrapper {
+            background: transparent;
+            border: none;
+        }
+
+        /* Marker cluster customization */
+        .marker-cluster-small {
+            background-color: rgba(66, 133, 244, 0.4);
+        }
+        .marker-cluster-small div {
+            background-color: #4285f4;
+            color: white;
+            font-weight: 700;
+        }
+        .marker-cluster-medium {
+            background-color: rgba(234, 67, 53, 0.4);
+        }
+        .marker-cluster-medium div {
+            background-color: #ea4335;
+            color: white;
+            font-weight: 700;
+        }
+        .marker-cluster-large {
+            background-color: rgba(251, 188, 5, 0.5);
+        }
+        .marker-cluster-large div {
+            background-color: #fbbc05;
+            color: #202124;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased h-screen flex flex-col">
+
+    <header class="bg-white border-b border-slate-200 px-4 py-2 flex-none flex items-center justify-between gap-2 shadow-sm z-20 h-14">
+        <div class="flex items-center space-x-2.5">
+            <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-200">
+                <i class="fa-solid fa-layer-group text-base"></i>
+            </div>
+            <div>
+                <div class="flex items-center space-x-2">
+                    <h1 class="text-sm font-bold text-slate-900 leading-tight">CSV 다중 레이어 지도 시각화</h1>
+                    <span class="bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 border border-blue-200">
+                        <i class="fa-brands fa-google text-blue-600"></i> 구글 지도
+                    </span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex items-center space-x-2">
+            <button id="exportCsvBtn" title="모든 파일/메모 통합 CSV 내보내기" class="px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors flex items-center space-x-1 border border-amber-200">
+                <i class="fa-solid fa-file-export text-amber-600"></i>
+                <span class="hidden sm:inline">통합 CSV 내보내기</span>
+            </button>
+            <button id="loadSampleBtn" title="다중 CSV 샘플 데이터 로드" class="px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center space-x-1 border border-blue-200">
+                <i class="fa-solid fa-flask"></i>
+                <span>다중 샘플 로드</span>
+            </button>
+            <button id="resetBtn" title="모든 데이터 초기화" class="px-2 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+                <i class="fa-solid fa-rotate-right"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex overflow-hidden p-3 gap-3">
+
+        <aside class="w-80 lg:w-80 flex flex-col gap-3 flex-none overflow-y-auto custom-scrollbar pr-1">
+            
+            <!-- Multi-File Upload Box -->
+            <div class="bg-white rounded-xl p-3 border border-slate-200 shadow-sm flex-none">
+                <h2 class="text-[11px] font-bold text-slate-700 mb-2 flex items-center justify-between uppercase tracking-wider">
+                    <span class="flex items-center space-x-1.5">
+                        <i class="fa-solid fa-file-circle-plus text-blue-600"></i>
+                        <span>1. CSV 파일 추가 (다중 지원)</span>
+                    </span>
+                    <span id="totalFilesBadge" class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-semibold">0개 파일</span>
+                </h2>
+                <div id="dropZone" class="border-2 border-dashed border-slate-300 hover:border-blue-500 transition-colors rounded-lg p-3 text-center bg-slate-50 hover:bg-blue-50/50 cursor-pointer relative">
+                    <input type="file" id="csvFileInput" accept=".csv, .txt" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <div class="space-y-1">
+                        <i class="fa-solid fa-cloud-arrow-up text-blue-600 text-base"></i>
+                        <p class="text-xs font-medium text-slate-700">여러 CSV 파일 드래그 & 드롭 또는 클릭</p>
+                        <p class="text-[10px] text-slate-400">여러 개 선택 가능 (추가 가능)</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- File Dataset Layer List Card -->
+            <div class="bg-white rounded-xl p-3 border border-slate-200 shadow-sm space-y-2 flex-none">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-[11px] font-bold text-slate-700 flex items-center space-x-1.5 uppercase tracking-wider">
+                        <i class="fa-solid fa-layer-group text-blue-600"></i>
+                        <span>2. 파일 레이어 목록</span>
+                    </h2>
+                    <span id="totalPointsBadge" class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded font-bold">0개 위치</span>
+                </div>
+
+                <div id="fileLayerList" class="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                    <div class="text-center py-4 text-xs text-slate-400 italic bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                        업로드된 파일이 없습니다.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Global / Batch Style Customizer Card -->
+            <div class="bg-white rounded-xl p-3 border border-slate-200 shadow-sm space-y-2.5 flex-none">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-[11px] font-bold text-slate-700 flex items-center space-x-1.5 uppercase tracking-wider">
+                        <i class="fa-solid fa-icons text-blue-600"></i>
+                        <span>3. 마커 스타일 설정</span>
+                    </h2>
+                    <div class="flex items-center space-x-1 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                        <span class="text-[9px] text-slate-500">미리보기</span>
+                        <div id="iconPreview" class="w-5 h-5 flex items-center justify-center text-red-500">
+                            <i class="fa-solid fa-location-dot text-base"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Shape Selector Grid -->
+                <div>
+                    <label class="block text-[10px] font-medium text-slate-500 mb-1">기본 아이콘 모양</label>
+                    <div class="grid grid-cols-4 gap-1" id="shapeSelectorGroup">
+                        <button type="button" data-shape="pin" class="shape-btn py-1 text-xs border rounded bg-blue-50 border-blue-500 text-blue-700 flex items-center justify-center">
+                            <i class="fa-solid fa-location-dot"></i>
+                        </button>
+                        <button type="button" data-shape="circle" class="shape-btn py-1 text-xs border border-slate-200 rounded bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center justify-center">
+                            <i class="fa-solid fa-circle"></i>
+                        </button>
+                        <button type="button" data-shape="star" class="shape-btn py-1 text-xs border border-slate-200 rounded bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center justify-center">
+                            <i class="fa-solid fa-star"></i>
+                        </button>
+                        <button type="button" data-shape="flag" class="shape-btn py-1 text-xs border border-slate-200 rounded bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center justify-center">
+                            <i class="fa-solid fa-flag"></i>
+                        </button>
+                        <button type="button" data-shape="bookmark" class="shape-btn py-1 text-xs border border-slate-200 rounded bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center justify-center">
+                            <i class="fa-solid fa-bookmark"></i>
+                        </button>
+                        <button type="button" data-shape="mappin" class="shape-btn py-1 text-xs border border-slate-200 rounded bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center justify-center">
+                            <i class="fa-solid fa-map-pin"></i>
+                        </button>
+                        <button type="button" data-shape="building" class="shape-btn py-1 text-xs border border-slate-200 rounded bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center justify-center">
+                            <i class="fa-solid fa-building"></i>
+                        </button>
+                        <button type="button" data-shape="heart" class="shape-btn py-1 text-xs border border-slate-200 rounded bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center justify-center">
+                            <i class="fa-solid fa-heart"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Color Swatches & Picker -->
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-[10px] font-medium text-slate-500">선택 색상</label>
+                        <input type="color" id="customColorPicker" value="#ea4335" class="w-5 h-5 p-0 border-0 rounded cursor-pointer bg-transparent">
+                    </div>
+                    <div class="flex items-center justify-between gap-1" id="colorPaletteGroup">
+                        <button type="button" data-color="#ea4335" class="color-swatch-btn w-6 h-6 rounded-full bg-[#ea4335] ring-2 ring-offset-1 ring-[#ea4335] transition-all"></button>
+                        <button type="button" data-color="#2563eb" class="color-swatch-btn w-6 h-6 rounded-full bg-[#2563eb] transition-all"></button>
+                        <button type="button" data-color="#059669" class="color-swatch-btn w-6 h-6 rounded-full bg-[#059669] transition-all"></button>
+                        <button type="button" data-color="#d97706" class="color-swatch-btn w-6 h-6 rounded-full bg-[#d97706] transition-all"></button>
+                        <button type="button" data-color="#7c3aed" class="color-swatch-btn w-6 h-6 rounded-full bg-[#7c3aed] transition-all"></button>
+                        <button type="button" data-color="#db2777" class="color-swatch-btn w-6 h-6 rounded-full bg-[#db2777] transition-all"></button>
+                        <button type="button" data-color="#1e293b" class="color-swatch-btn w-6 h-6 rounded-full bg-[#1e293b] transition-all"></button>
+                    </div>
+                </div>
+
+                <!-- Size Slider -->
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label for="iconSizeSlider" class="text-[10px] font-medium text-slate-500">크기</label>
+                        <span id="iconSizeValue" class="text-[10px] font-semibold text-blue-600">30 px</span>
+                    </div>
+                    <input type="range" id="iconSizeSlider" min="18" max="52" value="30" step="2" class="w-full accent-blue-600 cursor-pointer h-1 bg-slate-200 rounded">
+                </div>
+
+                <button id="applyBatchStyleBtn" type="button" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-[11px] py-1.5 rounded-md border border-slate-300 transition-colors flex items-center justify-center space-x-1">
+                    <i class="fa-solid fa-wand-magic-sparkles text-blue-600"></i>
+                    <span>전체 마커 모양/크기 적용</span>
+                </button>
+            </div>
+
+            <!-- Toast / Notification Box -->
+            <div id="toastBox" class="hidden p-2.5 rounded-lg border text-xs flex items-start space-x-2 transition-all flex-none">
+                <i id="toastIcon" class="fa-solid fa-circle-info text-sm mt-0.5"></i>
+                <div id="toastMessage" class="flex-1 font-medium leading-tight text-[11px]"></div>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col gap-3 min-w-0 h-full overflow-hidden">
+            
+            <!-- Map Container -->
+            <div class="flex-1 bg-white rounded-xl p-1.5 border border-slate-200 shadow-sm relative flex flex-col min-h-0">
+                <div class="map-parent-container">
+                    <div id="map"></div>
+                </div>
+
+                <!-- Floating Overlay Controls -->
+                <div class="absolute top-3 right-3 z-[400] bg-white/95 backdrop-blur border border-slate-200 shadow-md rounded-lg p-1.5 flex items-center gap-1.5 text-xs">
+                    <select id="mapTypeSelect" class="bg-slate-50 border border-slate-200 font-medium text-slate-700 outline-none text-xs rounded p-1 cursor-pointer">
+                        <option value="google_roadmap">구글 일반 지도</option>
+                        <option value="google_satellite">구글 위성 지도</option>
+                        <option value="google_hybrid">구글 하이브리드</option>
+                        <option value="google_terrain">구글 지형도</option>
+                        <option value="osm">OpenStreetMap</option>
+                    </select>
+
+                    <button id="fitBoundsBtn" title="모든 마커 한눈에 보기" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors flex items-center space-x-1 font-medium">
+                        <i class="fa-solid fa-expand text-slate-500"></i>
+                        <span class="hidden sm:inline">전체 보기</span>
+                    </button>
+
+                    <button id="toggleClusterBtn" title="클러스터링 설정" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors flex items-center space-x-1 font-medium border border-blue-200">
+                        <i class="fa-solid fa-object-group"></i>
+                        <span id="clusterStatusText" class="hidden sm:inline">클러스터 켜짐</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Bottom Data Table -->
+            <div id="tableContainer" class="h-48 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden flex-none hidden">
+                <div class="px-3 py-1.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between flex-none gap-2">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-table text-blue-600 text-xs"></i>
+                        <span class="text-xs font-bold text-slate-700">통합 목록 & 메모</span>
+                        <span id="tableBadge" class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded-full font-bold">0건</span>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <select id="fileFilterSelect" class="text-xs bg-white border border-slate-300 rounded px-1.5 py-0.5 outline-none">
+                            <option value="ALL">전체 파일 표시</option>
+                        </select>
+                        <div class="relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-2 top-1.5 text-slate-400 text-[10px]"></i>
+                            <input type="text" id="searchInput" placeholder="검색..." class="pl-6 pr-2 py-0.5 text-xs border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-36 sm:w-44">
+                        </div>
+                    </div>
+                </div>
+                <div class="flex-1 overflow-auto custom-scrollbar">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead class="bg-slate-100 text-slate-600 font-medium sticky top-0 border-b border-slate-200 z-10">
+                            <tr id="tableHeader">
+                                <th class="py-1.5 px-2">#</th>
+                                <th class="py-1.5 px-2">파일명</th>
+                                <th class="py-1.5 px-2 text-amber-700 bg-amber-50/80"><i class="fa-solid fa-sticky-note mr-1"></i>메모</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody" class="divide-y divide-slate-100 text-slate-700">
+                            <!-- Dynamic rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Column Mapping Modal for individual files -->
+    <div id="mappingModal" class="hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-sm p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 class="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-sliders text-blue-600"></i>
+                    <span id="modalFileName">열 매핑 설정</span>
+                </h3>
+                <button type="button" onclick="closeMappingModal()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+            </div>
+
+            <div class="space-y-2">
+                <input type="hidden" id="modalFileId">
+                <div>
+                    <label for="modalLatSelect" class="block text-[10px] font-medium text-slate-500 mb-0.5">위도 열 선택</label>
+                    <select id="modalLatSelect" class="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 outline-none"></select>
+                </div>
+                <div>
+                    <label for="modalLngSelect" class="block text-[10px] font-medium text-slate-500 mb-0.5">경도 열 선택</label>
+                    <select id="modalLngSelect" class="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 outline-none"></select>
+                </div>
+                <div>
+                    <label for="modalTitleSelect" class="block text-[10px] font-medium text-slate-500 mb-0.5">장소/마커 이름 열 (선택)</label>
+                    <select id="modalTitleSelect" class="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 outline-none"></select>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+                <button type="button" onclick="closeMappingModal()" class="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg">취소</button>
+                <button type="button" onclick="saveMappingFromModal()" class="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm">매핑 적용</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let map = null;
+        let activeTileLayer = null;
+        let markerClusterGroup = null;
+        let singleMarkersGroup = null;
+        let isClusteringEnabled = true;
+
+        // Multi-file datasets state
+        let loadedFiles = [];
+        let allActiveMarkers = [];
+
+        // Global style configuration defaults
+        let globalMarkerStyle = {
+            shape: 'pin',
+            color: '#ea4335',
+            size: 30
+        };
+
+        const AUTO_COLOR_PALETTE = [
+            '#ea4335', '#2563eb', '#059669', '#d97706', '#7c3aed', 
+            '#db2777', '#0284c7', '#4f46e5', '#ca8a04', '#0d9488'
+        ];
+
+        const tileProviders = {
+            google_roadmap: L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                attribution: '&copy; Google Maps'
+            }),
+            google_satellite: L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                attribution: '&copy; Google Maps'
+            }),
+            google_hybrid: L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                attribution: '&copy; Google Maps'
+            }),
+            google_terrain: L.tileLayer('https://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                attribution: '&copy; Google Maps'
+            }),
+            osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap'
+            })
+        };
+
+        const LAT_KEYWORDS = ['lat', 'latitude', '위도', 'y', 'lat_deg'];
+        const LNG_KEYWORDS = ['lng', 'lon', 'longitude', '경도', 'x', 'lng_deg'];
+        const TITLE_KEYWORDS = ['title', 'name', 'label', '이름', '명칭', '상호명', '장소', '지점명'];
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            setupEventListeners();
+            setupMarkerCustomizerControls();
+            
+            setTimeout(() => { if (map) map.invalidateSize(); }, 200);
+            setTimeout(() => { if (map) map.invalidateSize(); }, 600);
+        });
+
+        function initMap() {
+            map = L.map('map', {
+                center: [36.5, 127.8],
+                zoom: 7,
+                zoomControl: true
+            });
+
+            activeTileLayer = tileProviders['google_roadmap'];
+            activeTileLayer.addTo(map);
+
+            if (typeof L.markerClusterGroup === 'function') {
+                markerClusterGroup = L.markerClusterGroup({
+                    chunkedLoading: true,
+                    maxClusterRadius: 40
+                });
+            } else {
+                markerClusterGroup = L.layerGroup();
+                isClusteringEnabled = false;
+            }
+
+            singleMarkersGroup = L.layerGroup();
+            map.addLayer(markerClusterGroup);
+
+            const mapContainer = document.getElementById('map');
+            if (window.ResizeObserver && mapContainer) {
+                const resizeObserver = new ResizeObserver(() => {
+                    if (map) map.invalidateSize();
+                });
+                resizeObserver.observe(mapContainer);
+            }
+        }
+
+        function createCustomMarkerIcon(color, shape, size) {
+            let iconClass = 'fa-solid fa-location-dot';
+            let isPinType = true;
+
+            switch (shape) {
+                case 'circle': iconClass = 'fa-solid fa-circle'; isPinType = false; break;
+                case 'star': iconClass = 'fa-solid fa-star'; isPinType = false; break;
+                case 'flag': iconClass = 'fa-solid fa-flag'; isPinType = true; break;
+                case 'bookmark': iconClass = 'fa-solid fa-bookmark'; isPinType = false; break;
+                case 'mappin': iconClass = 'fa-solid fa-map-pin'; isPinType = true; break;
+                case 'building': iconClass = 'fa-solid fa-building'; isPinType = false; break;
+                case 'heart': iconClass = 'fa-solid fa-heart'; isPinType = false; break;
+                case 'pin': default: iconClass = 'fa-solid fa-location-dot'; isPinType = true; break;
+            }
+
+            const anchorX = size / 2;
+            const anchorY = isPinType ? size : size / 2;
+
+            return L.divIcon({
+                className: 'custom-marker-wrapper',
+                html: `<div style="
+                    color: ${color};
+                    font-size: ${size}px;
+                    line-height: 1;
+                    filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.4));
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: ${size}px;
+                    height: ${size}px;
+                ">
+                    <i class="${iconClass}"></i>
+                </div>`,
+                iconSize: [size, size],
+                iconAnchor: [anchorX, anchorY],
+                popupAnchor: [0, -anchorY + 2]
+            });
+        }
+
+        function setupMarkerCustomizerControls() {
+            const shapeBtns = document.querySelectorAll('.shape-btn');
+            const colorBtns = document.querySelectorAll('.color-swatch-btn');
+            const customColorPicker = document.getElementById('customColorPicker');
+            const sizeSlider = document.getElementById('iconSizeSlider');
+            const sizeValue = document.getElementById('iconSizeValue');
+            const applyBatchStyleBtn = document.getElementById('applyBatchStyleBtn');
+
+            shapeBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    shapeBtns.forEach(b => b.className = 'shape-btn py-1 text-xs border border-slate-200 rounded bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center justify-center');
+                    btn.className = 'shape-btn py-1 text-xs border rounded bg-blue-50 border-blue-500 text-blue-700 flex items-center justify-center';
+                    globalMarkerStyle.shape = btn.getAttribute('data-shape');
+                    updateLivePreviewOnly();
+                });
+            });
+
+            colorBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const color = btn.getAttribute('data-color');
+                    colorBtns.forEach(b => b.classList.remove('ring-2', 'ring-offset-1'));
+                    btn.classList.add('ring-2', 'ring-offset-1');
+                    btn.style.setProperty('--tw-ring-color', color);
+                    
+                    customColorPicker.value = color;
+                    globalMarkerStyle.color = color;
+                    updateLivePreviewOnly();
+                });
+            });
+
+            customColorPicker.addEventListener('input', (e) => {
+                globalMarkerStyle.color = e.target.value;
+                updateLivePreviewOnly();
+            });
+
+            sizeSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                sizeValue.textContent = `${val} px`;
+                globalMarkerStyle.size = val;
+                updateLivePreviewOnly();
+            });
+
+            if (applyBatchStyleBtn) {
+                applyBatchStyleBtn.addEventListener('click', applyGlobalStyleToAll);
+            }
+        }
+
+        function updateLivePreviewOnly() {
+            const previewBox = document.getElementById('iconPreview');
+            let iconClass = 'fa-solid fa-location-dot';
+
+            switch (globalMarkerStyle.shape) {
+                case 'circle': iconClass = 'fa-solid fa-circle'; break;
+                case 'star': iconClass = 'fa-solid fa-star'; break;
+                case 'flag': iconClass = 'fa-solid fa-flag'; break;
+                case 'bookmark': iconClass = 'fa-solid fa-bookmark'; break;
+                case 'mappin': iconClass = 'fa-solid fa-map-pin'; break;
+                case 'building': iconClass = 'fa-solid fa-building'; break;
+                case 'heart': iconClass = 'fa-solid fa-heart'; break;
+                case 'pin': default: iconClass = 'fa-solid fa-location-dot'; break;
+            }
+
+            previewBox.style.color = globalMarkerStyle.color;
+            previewBox.innerHTML = `<i class="${iconClass}"></i>`;
+        }
+
+        function applyGlobalStyleToAll() {
+            if (loadedFiles.length === 0) {
+                showToast('등록된 파일 및 마커가 없습니다.', 'error');
+                return;
+            }
+
+            loadedFiles.forEach(file => {
+                file.shape = globalMarkerStyle.shape;
+                file.sizePx = globalMarkerStyle.size;
+                file.data.forEach(row => {
+                    row._shape = globalMarkerStyle.shape;
+                    row._size = globalMarkerStyle.size;
+                });
+            });
+
+            reRenderAllMapLayers();
+            showToast('모든 마커의 모양과 크기가 적용되었습니다.', 'success');
+        }
+
+        // --- Multi-File Processing Functions ---
+
+        function handleFilesUpload(filesList) {
+            if (!filesList || filesList.length === 0) return;
+
+            let fileArray = Array.from(filesList);
+            let parsedCount = 0;
+
+            fileArray.forEach((file, idx) => {
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        if (results.data && results.data.length > 0) {
+                            addDatasetFile(file.name, file.size, results.data, results.meta.fields || Object.keys(results.data[0]));
+                        }
+                        parsedCount++;
+                        if (parsedCount === fileArray.length) {
+                            reRenderAllMapLayers();
+                            showToast(`${fileArray.length}개의 CSV 파일 로드 완료`, 'success');
+                        }
+                    }
+                });
+            });
+
+            document.getElementById('csvFileInput').value = '';
+        }
+
+        function addDatasetFile(filename, size, data, headers) {
+            const fileId = 'file_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+            const defaultColor = AUTO_COLOR_PALETTE[loadedFiles.length % AUTO_COLOR_PALETTE.length];
+
+            // Auto-detect columns
+            let latCol = '';
+            let lngCol = '';
+            let titleCol = '';
+
+            headers.forEach(h => {
+                if (h === '메모') return;
+                const lower = h.trim().toLowerCase();
+                if (!latCol && LAT_KEYWORDS.some(k => lower === k || lower.includes(k))) latCol = h;
+                if (!lngCol && LNG_KEYWORDS.some(k => lower === k || lower.includes(k))) lngCol = h;
+                if (!titleCol && TITLE_KEYWORDS.some(k => lower === k || lower.includes(k))) titleCol = h;
+            });
+
+            const processedRows = data.map((row, index) => ({
+                ...row,
+                _fileId: fileId,
+                _index: index,
+                _title: titleCol && row[titleCol] ? String(row[titleCol]) : `지점 #${index + 1}`,
+                _color: defaultColor,
+                _shape: globalMarkerStyle.shape,
+                _size: globalMarkerStyle.size,
+                _note: row['메모'] || row['note'] || ''
+            }));
+
+            const fileObj = {
+                id: fileId,
+                name: filename,
+                size: size,
+                color: defaultColor,
+                shape: globalMarkerStyle.shape,
+                sizePx: globalMarkerStyle.size,
+                visible: true,
+                latCol: latCol,
+                lngCol: lngCol,
+                titleCol: titleCol,
+                headers: headers,
+                data: processedRows
+            };
+
+            loadedFiles.push(fileObj);
+        }
+
+        function reRenderAllMapLayers() {
+            markerClusterGroup.clearLayers();
+            singleMarkersGroup.clearLayers();
+            allActiveMarkers = [];
+
+            const bounds = [];
+            let totalPoints = 0;
+
+            loadedFiles.forEach(file => {
+                if (!file.visible) return;
+                if (!file.latCol || !file.lngCol) return;
+
+                file.data.forEach((row, rowIndex) => {
+                    const latVal = parseFloat(row[file.latCol]);
+                    const lngVal = parseFloat(row[file.lngCol]);
+
+                    if (!isNaN(latVal) && !isNaN(lngVal) && latVal >= -90 && latVal <= 90 && lngVal >= -180 && lngVal <= 180) {
+                        totalPoints++;
+                        
+                        const colorToUse = row._color || file.color;
+                        const shapeToUse = row._shape || file.shape;
+                        const sizeToUse = row._size || file.sizePx;
+
+                        const markerIcon = createCustomMarkerIcon(colorToUse, shapeToUse, sizeToUse);
+                        const marker = L.marker([latVal, lngVal], { icon: markerIcon });
+                        
+                        marker.fileId = file.id;
+                        marker.rowIndex = rowIndex;
+
+                        marker.bindPopup(() => createPopupContent(file, row, rowIndex));
+
+                        allActiveMarkers.push(marker);
+                        bounds.push([latVal, lngVal]);
+                    }
+                });
+            });
+
+            if (isClusteringEnabled) {
+                markerClusterGroup.addLayers(allActiveMarkers);
+            } else {
+                allActiveMarkers.forEach(m => singleMarkersGroup.addLayer(m));
+            }
+
+            if (bounds.length > 0 && map) {
+                map.fitBounds(bounds, { padding: [30, 30] });
+            }
+
+            updateFileLayerListUI();
+            updateFilterDropdownUI();
+            renderCombinedDataTable();
+        }
+
+        function updateFileLayerListUI() {
+            const container = document.getElementById('fileLayerList');
+            const totalFilesBadge = document.getElementById('totalFilesBadge');
+            const totalPointsBadge = document.getElementById('totalPointsBadge');
+
+            totalFilesBadge.textContent = `${loadedFiles.length}개 파일`;
+            
+            let sumPoints = 0;
+            loadedFiles.forEach(f => {
+                if (f.visible) sumPoints += f.data.length;
+            });
+            totalPointsBadge.textContent = `${sumPoints}개 위치`;
+
+            if (loadedFiles.length === 0) {
+                container.innerHTML = `<div class="text-center py-4 text-xs text-slate-400 italic bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                    업로드된 파일이 없습니다.
+                </div>`;
+                return;
+            }
+
+            let html = '';
+            loadedFiles.forEach(file => {
+                const unmapped = !file.latCol || !file.lngCol;
+                
+                html += `<div class="p-2 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-1 text-xs">
+                    <div class="flex items-center justify-between gap-1">
+                        <div class="flex items-center space-x-2 truncate">
+                            <input type="checkbox" ${file.visible ? 'checked' : ''} onchange="toggleFileVisibility('${file.id}')" class="rounded text-blue-600 focus:ring-0 cursor-pointer">
+                            <span class="font-bold text-slate-800 truncate" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+                        </div>
+                        <div class="flex items-center space-x-1 flex-none">
+                            <input type="color" value="${file.color}" onchange="changeFileColor('${file.id}', this.value)" class="w-4 h-4 p-0 border-0 rounded cursor-pointer bg-transparent" title="레이어 대표 색상 변경">
+                            <button type="button" onclick="openMappingModal('${file.id}')" class="p-1 text-slate-500 hover:text-blue-600 rounded" title="열 매핑 수정">
+                                <i class="fa-solid fa-sliders"></i>
+                            </button>
+                            <button type="button" onclick="removeFileDataset('${file.id}')" class="p-1 text-slate-400 hover:text-red-600 rounded" title="파일 삭제">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between text-[10px] text-slate-500 pl-5">
+                        <span>${file.data.length}개 지점 (${formatBytes(file.size)})</span>
+                        ${unmapped ? '<span class="text-red-500 font-semibold"><i class="fa-solid fa-triangle-exclamation"></i> 매핑 필요</span>' : '<span class="text-emerald-600"><i class="fa-solid fa-check"></i> 매핑됨</span>'}
+                    </div>
+                </div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function toggleFileVisibility(fileId) {
+            const file = loadedFiles.find(f => f.id === fileId);
+            if (file) {
+                file.visible = !file.visible;
+                reRenderAllMapLayers();
+            }
+        }
+
+        function changeFileColor(fileId, newColor) {
+            const file = loadedFiles.find(f => f.id === fileId);
+            if (file) {
+                file.color = newColor;
+                file.data.forEach(r => r._color = newColor);
+                reRenderAllMapLayers();
+            }
+        }
+
+        function removeFileDataset(fileId) {
+            loadedFiles = loadedFiles.filter(f => f.id !== fileId);
+            reRenderAllMapLayers();
+            showToast('파일 레이어가 삭제되었습니다.', 'info');
+        }
+
+        function updateFilterDropdownUI() {
+            const select = document.getElementById('fileFilterSelect');
+            const currentVal = select.value;
+            
+            select.innerHTML = '<option value="ALL">전체 파일 표시</option>';
+            loadedFiles.forEach(f => {
+                select.appendChild(new Option(f.name, f.id));
+            });
+
+            if (loadedFiles.some(f => f.id === currentVal)) {
+                select.value = currentVal;
+            } else {
+                select.value = 'ALL';
+            }
+        }
+
+        function createPopupContent(file, row, rowIndex) {
+            return `<div class="p-1 space-y-2 text-xs" style="min-width: 220px;">
+                <div class="text-[10px] font-bold text-blue-600 border-b border-slate-100 pb-1 flex justify-between">
+                    <span class="truncate">${escapeHtml(file.name)}</span>
+                    <span class="text-slate-400">#${rowIndex + 1}</span>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-0.5">장소/마커 이름</label>
+                    <input type="text" id="popup-title-${file.id}-${rowIndex}" value="${escapeHtml(row._title || '')}" class="w-full text-xs font-bold p-1 border border-slate-300 rounded outline-none bg-slate-50 text-slate-800" placeholder="이름 입력...">
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-0.5 flex justify-between">
+                        <span>개별 색상</span>
+                        <span class="text-[9px] font-semibold" id="popup-hex-${file.id}-${rowIndex}">${row._color || file.color}</span>
+                    </label>
+                    <div class="flex items-center gap-1">
+                        <input type="color" id="popup-color-${file.id}-${rowIndex}" value="${row._color || file.color}" oninput="document.getElementById('popup-hex-${file.id}-${rowIndex}').textContent = this.value" class="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent">
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick="setPopupPresetColor('${file.id}', ${rowIndex}, '#ea4335')" class="w-4 h-4 rounded-full bg-[#ea4335]"></button>
+                            <button type="button" onclick="setPopupPresetColor('${file.id}', ${rowIndex}, '#2563eb')" class="w-4 h-4 rounded-full bg-[#2563eb]"></button>
+                            <button type="button" onclick="setPopupPresetColor('${file.id}', ${rowIndex}, '#059669')" class="w-4 h-4 rounded-full bg-[#059669]"></button>
+                            <button type="button" onclick="setPopupPresetColor('${file.id}', ${rowIndex}, '#d97706')" class="w-4 h-4 rounded-full bg-[#d97706]"></button>
+                            <button type="button" onclick="setPopupPresetColor('${file.id}', ${rowIndex}, '#7c3aed')" class="w-4 h-4 rounded-full bg-[#7c3aed]"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-0.5 flex justify-between">
+                        <span>위치 메모</span>
+                        <span id="popup-badge-${file.id}-${rowIndex}" class="text-[9px] text-emerald-600 font-semibold hidden"><i class="fa-solid fa-check"></i> 저장됨</span>
+                    </label>
+                    <textarea id="popup-note-${file.id}-${rowIndex}" rows="2" class="w-full text-xs p-1 border border-slate-300 rounded outline-none resize-none bg-amber-50/30" placeholder="메모 입력...">${escapeHtml(row._note || '')}</textarea>
+                </div>
+
+                <button onclick="savePopupMarkerDetails('${file.id}', ${rowIndex})" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] py-1 rounded shadow-sm transition-colors flex items-center justify-center gap-1">
+                    <i class="fa-solid fa-floppy-disk"></i> 저장하기
+                </button>
+            </div>`;
+        }
+
+        window.setPopupPresetColor = function(fileId, rowIndex, colorHex) {
+            const colorInput = document.getElementById(`popup-color-${fileId}-${rowIndex}`);
+            const hexText = document.getElementById(`popup-hex-${fileId}-${rowIndex}`);
+            if (colorInput) colorInput.value = colorHex;
+            if (hexText) hexText.textContent = colorHex;
+        };
+
+        window.savePopupMarkerDetails = function(fileId, rowIndex) {
+            const file = loadedFiles.find(f => f.id === fileId);
+            if (!file || !file.data[rowIndex]) return;
+
+            const row = file.data[rowIndex];
+            const titleInput = document.getElementById(`popup-title-${fileId}-${rowIndex}`);
+            const colorInput = document.getElementById(`popup-color-${fileId}-${rowIndex}`);
+            const noteInput = document.getElementById(`popup-note-${fileId}-${rowIndex}`);
+
+            if (titleInput) {
+                const newTitle = titleInput.value.trim() || `지점 #${rowIndex + 1}`;
+                row._title = newTitle;
+                if (file.titleCol) row[file.titleCol] = newTitle;
+            }
+
+            if (colorInput) row._color = colorInput.value;
+
+            if (noteInput) {
+                const newNote = noteInput.value.trim();
+                row._note = newNote;
+                row['메모'] = newNote;
+            }
+
+            const targetMarker = allActiveMarkers.find(m => m.fileId === fileId && m.rowIndex === rowIndex);
+            if (targetMarker) {
+                const newIcon = createCustomMarkerIcon(
+                    row._color || file.color,
+                    row._shape || file.shape,
+                    row._size || file.sizePx
+                );
+                targetMarker.setIcon(newIcon);
+            }
+
+            const badge = document.getElementById(`popup-badge-${fileId}-${rowIndex}`);
+            if (badge) {
+                badge.classList.remove('hidden');
+                setTimeout(() => badge.classList.add('hidden'), 2000);
+            }
+
+            renderCombinedDataTable();
+            showToast(`'${row._title}' 수정사항 저장 완료`, 'success');
+        };
+
+        function renderCombinedDataTable() {
+            const tableContainer = document.getElementById('tableContainer');
+            const tableHeader = document.getElementById('tableHeader');
+            const tableBody = document.getElementById('tableBody');
+            const tableBadge = document.getElementById('tableBadge');
+            const selectedFileFilter = document.getElementById('fileFilterSelect').value;
+
+            if (loadedFiles.length === 0) {
+                tableContainer.classList.add('hidden');
+                return;
+            }
+
+            tableContainer.classList.remove('hidden');
+
+            let displayRows = [];
+            loadedFiles.forEach(file => {
+                if (!file.visible) return;
+                if (selectedFileFilter !== 'ALL' && file.id !== selectedFileFilter) return;
+
+                file.data.forEach((row, rIdx) => {
+                    displayRows.push({ file, row, rIdx });
+                });
+            });
+
+            tableBadge.textContent = `${displayRows.length}건`;
+
+            // Build dynamic headers (collect distinct headers across visible files)
+            let headerSet = new Set(['장소명']);
+            loadedFiles.forEach(f => {
+                f.headers.forEach(h => {
+                    if (h !== '메모' && h !== f.titleCol) headerSet.add(h);
+                });
+            });
+
+            let headerArray = Array.from(headerSet);
+
+            let headerHtml = `<th class="py-1 px-2">#</th><th class="py-1 px-2">파일명</th><th class="py-1 px-2 text-amber-700 bg-amber-50/80"><i class="fa-solid fa-sticky-note mr-1"></i>메모</th>`;
+            headerArray.forEach(h => {
+                headerHtml += `<th class="py-1 px-2 whitespace-nowrap">${escapeHtml(h)}</th>`;
+            });
+            tableHeader.innerHTML = headerHtml;
+
+            let bodyHtml = '';
+            displayRows.forEach((item, index) => {
+                const { file, row, rIdx } = item;
+                const noteVal = row._note || row['메모'] || '';
+                const noteDisplay = noteVal ? `<span class="bg-amber-50 text-amber-800 px-1 py-0.2 rounded border border-amber-200">${escapeHtml(noteVal)}</span>` : '<span class="text-slate-300">없음</span>';
+                const colorDot = `<span class="inline-block w-2.5 h-2.5 rounded-full mr-1 flex-none" style="background-color: ${row._color || file.color}"></span>`;
+
+                bodyHtml += `<tr data-file-id="${file.id}" data-row-index="${rIdx}" class="hover:bg-blue-50/60 cursor-pointer border-b border-slate-100">
+                    <td class="py-1 px-2 font-semibold text-slate-400">${index + 1}</td>
+                    <td class="py-1 px-2 text-slate-500 font-medium whitespace-nowrap"><span class="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 text-[10px]">${escapeHtml(file.name)}</span></td>
+                    <td class="py-1 px-2 max-w-xs truncate">${noteDisplay}</td>`;
+
+                headerArray.forEach(h => {
+                    let val = '';
+                    if (h === '장소명') {
+                        val = row._title || (file.titleCol ? row[file.titleCol] : '');
+                        bodyHtml += `<td class="py-1 px-2 whitespace-nowrap font-medium text-slate-900 flex items-center">${colorDot}<span>${escapeHtml(val || `지점 #${rIdx+1}`)}</span></td>`;
+                    } else {
+                        val = row[h] ?? '';
+                        bodyHtml += `<td class="py-1 px-2 whitespace-nowrap max-w-xs truncate">${escapeHtml(val)}</td>`;
+                    }
+                });
+
+                bodyHtml += `</tr>`;
+            });
+
+            tableBody.innerHTML = bodyHtml;
+
+            tableBody.querySelectorAll('tr').forEach(tr => {
+                tr.addEventListener('click', () => {
+                    const fId = tr.getAttribute('data-file-id');
+                    const rIdx = parseInt(tr.getAttribute('data-row-index'));
+
+                    const targetMarker = allActiveMarkers.find(m => m.fileId === fId && m.rowIndex === rIdx);
+                    if (targetMarker) {
+                        map.setView(targetMarker.getLatLng(), 15, { animate: true });
+                        targetMarker.openPopup();
+                    }
+                });
+            });
+        }
+
+        // Modal for editing individual file column mapping
+        window.openMappingModal = function(fileId) {
+            const file = loadedFiles.find(f => f.id === fileId);
+            if (!file) return;
+
+            document.getElementById('modalFileId').value = fileId;
+            document.getElementById('modalFileName').textContent = `${file.name} - 열 매핑`;
+
+            const latSel = document.getElementById('modalLatSelect');
+            const lngSel = document.getElementById('modalLngSelect');
+            const titleSel = document.getElementById('modalTitleSelect');
+
+            latSel.innerHTML = '<option value="">-- 선택 --</option>';
+            lngSel.innerHTML = '<option value="">-- 선택 --</option>';
+            titleSel.innerHTML = '<option value="">-- 선택 안 함 --</option>';
+
+            file.headers.forEach(h => {
+                if (h === '메모') return;
+                latSel.appendChild(new Option(h, h));
+                lngSel.appendChild(new Option(h, h));
+                titleSel.appendChild(new Option(h, h));
+            });
+
+            if (file.latCol) latSel.value = file.latCol;
+            if (file.lngCol) lngSel.value = file.lngCol;
+            if (file.titleCol) titleSel.value = file.titleCol;
+
+            document.getElementById('mappingModal').classList.remove('hidden');
+        };
+
+        window.closeMappingModal = function() {
+            document.getElementById('mappingModal').classList.add('hidden');
+        };
+
+        window.saveMappingFromModal = function() {
+            const fileId = document.getElementById('modalFileId').value;
+            const file = loadedFiles.find(f => f.id === fileId);
+            if (!file) return;
+
+            file.latCol = document.getElementById('modalLatSelect').value;
+            file.lngCol = document.getElementById('modalLngSelect').value;
+            file.titleCol = document.getElementById('modalTitleSelect').value;
+
+            closeMappingModal();
+            reRenderAllMapLayers();
+            showToast('열 매핑 설정이 저장되었습니다.', 'success');
+        };
+
+        function exportCombinedCsv() {
+            if (loadedFiles.length === 0) {
+                showToast('내보낼 데이터가 없습니다.', 'error');
+                return;
+            }
+
+            const exportRows = [];
+            loadedFiles.forEach(file => {
+                file.data.forEach(row => {
+                    const cleanRow = { '파일명': file.name };
+                    Object.keys(row).forEach(k => {
+                        if (!k.startsWith('_')) cleanRow[k] = row[k];
+                    });
+                    if (file.titleCol && row._title) cleanRow[file.titleCol] = row._title;
+                    cleanRow['메모'] = row._note || row['메모'] || '';
+                    exportRows.push(cleanRow);
+                });
+            });
+
+            const csvString = Papa.unparse(exportRows);
+            const blob = new Blob(["\uFEFF" + csvString], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "combined_map_layers.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showToast('통합 CSV 파일이 성공적으로 다운로드되었습니다.', 'success');
+        }
+
+        function setupEventListeners() {
+            const dropZone = document.getElementById('dropZone');
+            const csvFileInput = document.getElementById('csvFileInput');
+            const loadSampleBtn = document.getElementById('loadSampleBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const searchInput = document.getElementById('searchInput');
+            const fitBoundsBtn = document.getElementById('fitBoundsBtn');
+            const toggleClusterBtn = document.getElementById('toggleClusterBtn');
+            const mapTypeSelect = document.getElementById('mapTypeSelect');
+            const exportCsvBtn = document.getElementById('exportCsvBtn');
+            const fileFilterSelect = document.getElementById('fileFilterSelect');
+
+            exportCsvBtn.addEventListener('click', exportCombinedCsv);
+            fileFilterSelect.addEventListener('change', renderCombinedDataTable);
+
+            mapTypeSelect.addEventListener('change', (e) => {
+                const selectedKey = e.target.value;
+                if (tileProviders[selectedKey]) {
+                    if (activeTileLayer) map.removeLayer(activeTileLayer);
+                    activeTileLayer = tileProviders[selectedKey];
+                    activeTileLayer.addTo(map);
+                }
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('border-blue-500', 'bg-blue-50/50');
+                });
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('border-blue-500', 'bg-blue-50/50');
+                });
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                if (dt.files.length > 0) handleFilesUpload(dt.files);
+            });
+
+            csvFileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) handleFilesUpload(e.target.files);
+            });
+
+            loadSampleBtn.addEventListener('click', loadMultiSampleData);
+            resetBtn.addEventListener('click', resetAll);
+            searchInput.addEventListener('input', handleSearch);
+            fitBoundsBtn.addEventListener('click', fitMapToBounds);
+            toggleClusterBtn.addEventListener('click', toggleClustering);
+        }
+
+        function handleSearch(e) {
+            const query = e.target.value.toLowerCase().trim();
+            document.querySelectorAll('#tableBody tr').forEach(tr => {
+                tr.style.display = tr.textContent.toLowerCase().includes(query) ? '' : 'none';
+            });
+        }
+
+        function fitMapToBounds() {
+            if (allActiveMarkers.length > 0) {
+                const group = L.featureGroup(allActiveMarkers);
+                map.fitBounds(group.getBounds(), { padding: [30, 30] });
+            }
+        }
+
+        function toggleClustering() {
+            if (typeof L.markerClusterGroup !== 'function') return;
+
+            isClusteringEnabled = !isClusteringEnabled;
+            const text = document.getElementById('clusterStatusText');
+
+            if (isClusteringEnabled) {
+                map.removeLayer(singleMarkersGroup);
+                markerClusterGroup.clearLayers();
+                markerClusterGroup.addLayers(allActiveMarkers);
+                map.addLayer(markerClusterGroup);
+                text.textContent = '클러스터 켜짐';
+            } else {
+                map.removeLayer(markerClusterGroup);
+                singleMarkersGroup.clearLayers();
+                allActiveMarkers.forEach(m => singleMarkersGroup.addLayer(m));
+                map.addLayer(singleMarkersGroup);
+                text.textContent = '클러스터 꺼짐';
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const toastBox = document.getElementById('toastBox');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastBox.classList.remove('hidden', 'bg-red-50', 'text-red-700', 'border-red-200', 'bg-emerald-50', 'text-emerald-700', 'border-emerald-200', 'bg-blue-50', 'text-blue-700', 'border-blue-200');
+
+            if (type === 'error') {
+                toastBox.classList.add('bg-red-50', 'text-red-700', 'border-red-200');
+                toastIcon.className = 'fa-solid fa-circle-exclamation text-xs mt-0.5';
+            } else if (type === 'success') {
+                toastBox.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
+                toastIcon.className = 'fa-solid fa-circle-check text-xs mt-0.5';
+            } else {
+                toastBox.classList.add('bg-blue-50', 'text-blue-700', 'border-blue-200');
+                toastIcon.className = 'fa-solid fa-circle-info text-xs mt-0.5';
+            }
+
+            toastMessage.textContent = message;
+        }
+
+        function resetAll() {
+            if (markerClusterGroup) markerClusterGroup.clearLayers();
+            if (singleMarkersGroup) singleMarkersGroup.clearLayers();
+            
+            loadedFiles = [];
+            allActiveMarkers = [];
+
+            document.getElementById('tableContainer').classList.add('hidden');
+            document.getElementById('toastBox').classList.add('hidden');
+            document.getElementById('csvFileInput').value = '';
+
+            updateFileLayerListUI();
+            map.setView([36.5, 127.8], 7);
+            map.invalidateSize();
+            showToast('모든 레이어 데이터가 초기화되었습니다.', 'info');
+        }
+
+        function loadMultiSampleData() {
+            resetAll();
+
+            const sample1 = `장소명,위도,경도,카테고리,메모
+서울특별시청,37.5665,126.9780,공공기관,주차장 협소
+N서울타워,37.5512,126.9882,관광지,야경 명소 추천
+해운대해수욕장,35.1587,129.1604,관광지,여름 성수기 혼잡
+인천국제공항,37.4602,126.4407,교통,T1/T2 터미널 확인
+제주성산일출봉,33.4581,126.9425,자연명소,입장료 유료`;
+
+            const sample2 = `지점명,latitude,longitude,구분,메모
+천안시청,36.8151,127.1139,공공,민원실 1층 위치
+대전엑스포과학공원,36.3766,127.3872,공원,한빛탑 조명
+광주무등산국립공원,35.1341,126.9886,자연,등산화 필수
+대구팔공산,35.9892,128.6922,자연,케이블카 운영 중
+경주첨성대,35.8347,129.2190,유적지,야간 조명 예쁨`;
+
+            const parsed1 = Papa.parse(sample1, { header: true, skipEmptyLines: true });
+            const parsed2 = Papa.parse(sample2, { header: true, skipEmptyLines: true });
+
+            addDatasetFile('1_주요_관광명소.csv', 1200, parsed1.data, parsed1.meta.fields);
+            addDatasetFile('2_지방_주요거점.csv', 1100, parsed2.data, parsed2.meta.fields);
+
+            reRenderAllMapLayers();
+            showToast('2개의 샘플 CSV 레이어가 로드되었습니다.', 'success');
+        }
+
+        function escapeHtml(str) {
+            if (typeof str !== 'string') return str;
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+    </script>
+</body>
+</html>
